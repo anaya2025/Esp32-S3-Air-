@@ -2,60 +2,40 @@ name: Build ESP32-S3 Firmware and Web UI
 
 on:
   push:
-    branches: [ "main", "master" ]
+    branches: [ main, master ]
   pull_request:
-    branches: [ "main", "master" ]
+    branches: [ main, master ]
   workflow_dispatch:
 
-env:
-  ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: 'true'
-
 jobs:
-  build-web-app:
-    name: Build Web Management UI
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: 'npm'
-          cache-dependency-path: 'package-lock.json'
-
-      - name: Install dependencies
-        run: npm ci || npm install
-
-      - name: Run Type Check & Lint
-        run: npm run lint
-
-      - name: Build Web Application
-        run: npm run build
-
-      - name: Upload Web Build Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: web-dist
-          path: dist/
-
   build-esp32-firmware:
-    name: Build ESP-IDF v5 Firmware & Merged Binary
+    name: Build ESP32-S3 N16R8 Firmware & Merged Bin
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout repository
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup Python 3 & esptool
+      - name: Set up Python 3.10
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.10'
+          cache: 'pip'
 
-      - name: Install Python dependencies
+      - name: Install PlatformIO and esptool
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install platformio>=6.1.15 esptool>=4.7.0
+
+      - name: Cache PlatformIO Core & Packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio
+            .pio
+          key: ${{ runner.os }}-pio-${{ hashFiles('**/platformio.ini') }}
+          restore-keys: |
+            ${{ runner.os }}-pio-
 
       - name: Build ESP32-S3 Firmware via PlatformIO
         run: |
@@ -64,43 +44,57 @@ jobs:
           echo "=========================================================="
           pio run -e esp32s3_n16r8_arduino
 
-      - name: Generate merged.bin for Fresh Flash & Package Artifacts
+      - name: Generate Unified Flash Image (merged.bin)
         run: |
-          mkdir -p build_output
-          echo "ESP32-S3 N16R8 Hi-Fi Music Streamer Build Pipeline" > build_output/build_info.txt
-          echo "Target: ESP32-S3-WROOM-1-N16R8 (16MB Flash, 8MB Octal PSRAM)" >> build_output/build_info.txt
-          echo "DAC: UDA1334A I2S Stereo (BCLK=GPIO4, WCLK=GPIO5, DIN=GPIO6)" >> build_output/build_info.txt
-          echo "Flash Mode: DIO 80MHz 16MB" >> build_output/build_info.txt
-          echo "Fresh Flash Offset: 0x000000" >> build_output/build_info.txt
-          echo "Build Timestamp: $(date -u)" >> build_output/build_info.txt
-          
-          # 1. Run Python binary merger to generate merged.bin for 1-step fresh flash
-          python3 firmware/merge_bin.py --output build_output/merged.bin
-          cp build_output/merged.bin build_output/esp32s3_streamer_merged_16mb.bin 2>/dev/null || true
+          echo "=========================================================="
+          echo " Merging Bootloader, Partition Table, and App Firmware"
+          echo "=========================================================="
+          python firmware/merge_bin.py
 
-          # 2. Collect PlatformIO compiled binaries if present
-          if [ -d ".pio/build/esp32s3_n16r8_arduino" ]; then
-            cp .pio/build/esp32s3_n16r8_arduino/*.bin build_output/ 2>/dev/null || true
-            cp .pio/build/esp32s3_n16r8_arduino/*.elf build_output/ 2>/dev/null || true
-          fi
+      - name: List Generated Binaries
+        run: |
+          echo "=== Build Artifacts Directory ==="
+          ls -la build_artifacts/ || true
+          echo "=== PlatformIO Output Directory ==="
+          ls -la .pio/build/esp32s3_n16r8_arduino/ || true
 
-          # 3. Collect ESP-IDF compiled binaries if present
-          if [ -d "firmware/build" ]; then
-            cp firmware/build/*.bin build_output/ 2>/dev/null || true
-            cp firmware/build/*.elf build_output/ 2>/dev/null || true
-            cp firmware/build/bootloader/*.bin build_output/ 2>/dev/null || true
-            cp firmware/build/partition_table/*.bin build_output/ 2>/dev/null || true
-          fi
-
-          # 4. Include partition configuration, merger utility, and instructions
-          cp firmware/partitions_16mb.csv build_output/ 2>/dev/null || true
-          cp firmware/sdkconfig.defaults build_output/ 2>/dev/null || true
-          cp firmware/merge_bin.py build_output/ 2>/dev/null || true
-          cp FLASHING_GUIDE.md build_output/ 2>/dev/null || true
-
-      - name: Upload Firmware & merged.bin Bundle
+      - name: Upload Firmware Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: esp32s3-firmware-bundle
-          path: build_output/
+          path: |
+            build_artifacts/*.bin
+            build_artifacts/*.txt
+            .pio/build/esp32s3_n16r8_arduino/*.bin
+            .pio/build/esp32s3_n16r8_arduino/*.elf
+          retention-days: 30
 
+  build-web-app:
+    name: Lint and Build Web Controller Interface
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install NPM Dependencies
+        run: npm ci
+
+      - name: Run TypeScript Linter
+        run: npm run lint
+
+      - name: Build Web Application
+        run: npm run build
+
+      - name: Upload Web Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist-bundle
+          path: dist/
+          retention-days: 14
