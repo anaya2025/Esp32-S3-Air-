@@ -548,10 +548,11 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          cache: 'pip'
 
-      - name: Install esptool
-        run: pip install esptool
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
       - name: ESP-IDF Build with esp-idf-ci-action
         uses: espressif/esp-idf-ci-action@v1
@@ -705,6 +706,15 @@ project(esp32_s3_hifi_streamer)
     INCLUDE_DIRS "."
     REQUIRES esp_wifi esp_netif esp_event nvs_flash esp_http_server mdns esp_driver_i2s esp_ota app_update
 )
+`
+  },
+  {
+    filename: 'requirements.txt',
+    category: 'config',
+    description: 'Python package requirements (esptool) for automated firmware merging and flashing',
+    language: 'ini',
+    content: `# Python requirements for ESP32-S3 Firmware & Binary Merging
+esptool>=4.7.0
 `
   },
   {

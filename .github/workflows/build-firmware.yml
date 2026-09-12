@@ -51,10 +51,11 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          cache: 'pip'
 
-      - name: Install esptool
-        run: pip install esptool
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
       - name: ESP-IDF Build with esp-idf-ci-action
         uses: espressif/esp-idf-ci-action@v1
