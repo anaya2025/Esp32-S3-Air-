@@ -7,6 +7,9 @@ on:
     branches: [ "main", "master" ]
   workflow_dispatch:
 
+env:
+  ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: 'true'
+
 jobs:
   build-web-app:
     name: Build Web Management UI
@@ -18,8 +21,9 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'npm'
+          cache-dependency-path: 'package-lock.json'
 
       - name: Install dependencies
         run: npm ci || npm install
@@ -37,33 +41,59 @@ jobs:
           path: dist/
 
   build-esp32-firmware:
-    name: Build ESP-IDF v5 Firmware Binary
+    name: Build ESP-IDF v5 Firmware & Merged Binary
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Setup Python 3 & esptool
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install esptool
+        run: pip install esptool
 
       - name: ESP-IDF Build with esp-idf-ci-action
         uses: espressif/esp-idf-ci-action@v1
         with:
           esp_idf_version: v5.1.2
           target: esp32s3
-          path: '.'
+          path: 'firmware'
         continue-on-error: true
 
-      - name: Package Firmware Binaries & Manifest
+      - name: Generate merged.bin for Fresh Flash & Package Artifacts
         run: |
           mkdir -p build_output
           echo "ESP32-S3 N16R8 Hi-Fi Music Streamer Build Pipeline" > build_output/build_info.txt
           echo "Target: ESP32-S3-WROOM-1-N16R8 (16MB Flash, 8MB Octal PSRAM)" >> build_output/build_info.txt
           echo "DAC: UDA1334A I2S Stereo (BCLK=GPIO4, WCLK=GPIO5, DIN=GPIO6)" >> build_output/build_info.txt
+          echo "Flash Mode: DIO 80MHz 16MB" >> build_output/build_info.txt
+          echo "Fresh Flash Offset: 0x000000" >> build_output/build_info.txt
           echo "Build Timestamp: $(date -u)" >> build_output/build_info.txt
-          if [ -d "firmware" ]; then
-            cp -r firmware/* build_output/ 2>/dev/null || true
+          
+          # 1. Run Python binary merger to generate merged.bin for 1-step fresh flash
+          python3 firmware/merge_bin.py --output build_output/merged.bin
+          cp build_output/merged.bin build_output/esp32s3_streamer_merged_16mb.bin 2>/dev/null || true
+
+          # 2. Collect any compiled ELF and partition binaries
+          if [ -d "firmware/build" ]; then
+            cp firmware/build/*.bin build_output/ 2>/dev/null || true
+            cp firmware/build/*.elf build_output/ 2>/dev/null || true
+            cp firmware/build/bootloader/*.bin build_output/ 2>/dev/null || true
+            cp firmware/build/partition_table/*.bin build_output/ 2>/dev/null || true
           fi
 
-      - name: Upload Firmware Artifacts
+          # 3. Include partition configuration and instructions
+          cp firmware/partitions_16mb.csv build_output/ 2>/dev/null || true
+          cp firmware/sdkconfig.defaults build_output/ 2>/dev/null || true
+          cp firmware/merge_bin.py build_output/ 2>/dev/null || true
+
+      - name: Upload Firmware & merged.bin Bundle
         uses: actions/upload-artifact@v4
         with:
           name: esp32s3-firmware-bundle
           path: build_output/
+

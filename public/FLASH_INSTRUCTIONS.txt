@@ -1,0 +1,14 @@
+ESP32-S3 N16R8 Fresh Flash Instructions
+=======================================
+Target Hardware: ESP32-S3-WROOM-1-N16R8 (16MB Flash, 8MB Octal PSRAM)
+DAC: NXP UDA1334A (BCLK=GPIO4, WCLK=GPIO5, DIN=GPIO6)
+
+1. Single-Command Fresh Flash (All-in-One):
+   esptool.py --chip esp32s3 -p /dev/ttyUSB0 -b 921600 --before default_reset --after hard_reset write_flash --flash_mode dio --flash_freq 80m --flash_size 16MB 0x0 merged.bin
+
+2. Windows (PowerShell/CMD):
+   esptool.py --chip esp32s3 -p COM3 -b 921600 write_flash 0x0 merged.bin
+
+3. Web Browser Flash:
+   Visit https://espressif.github.io/esptool-js/ or ESP Web Tools, connect over USB,
+   and upload merged.bin to address 0x000000.

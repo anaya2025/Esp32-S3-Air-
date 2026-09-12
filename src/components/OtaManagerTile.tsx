@@ -11,7 +11,8 @@ import {
   UploadCloud,
   Cpu,
   Github,
-  GitBranch
+  GitBranch,
+  Download
 } from 'lucide-react';
 import { OtaState, PartitionInfo } from '../types';
 import { DEFAULT_PARTITIONS } from '../data/radioStations';
@@ -234,16 +235,27 @@ export const OtaManagerTile: React.FC<OtaManagerTileProps> = ({
           </div>
         </div>
 
-        {onOpenFirmwareHub && (
-          <button
-            type="button"
-            onClick={onOpenFirmwareHub}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono font-medium text-emerald-300 hover:text-white bg-[#0e1322] hover:bg-[#161d33] border border-emerald-500/30 transition-all cursor-pointer shrink-0"
+        <div className="flex items-center gap-2">
+          <a
+            href="/merged.bin"
+            download="merged.bin"
+            title="Download merged all-in-one binary for fresh flashing via USB (Offset 0x0)"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-mono font-medium text-amber-300 hover:text-white bg-[#1a1408] hover:bg-[#261d0c] border border-amber-500/30 transition-all cursor-pointer shrink-0"
           >
-            <GitBranch className="w-3.5 h-3.5 text-emerald-400" />
-            <span>View Repo Files</span>
-          </button>
-        )}
+            <Download className="w-3.5 h-3.5 text-amber-400" />
+            <span>merged.bin (0x0)</span>
+          </a>
+          {onOpenFirmwareHub && (
+            <button
+              type="button"
+              onClick={onOpenFirmwareHub}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono font-medium text-emerald-300 hover:text-white bg-[#0e1322] hover:bg-[#161d33] border border-emerald-500/30 transition-all cursor-pointer shrink-0"
+            >
+              <GitBranch className="w-3.5 h-3.5 text-emerald-400" />
+              <span>View Repo Files</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* 16MB Partition Table Inspector Modal / Accordion */}

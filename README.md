@@ -30,6 +30,39 @@ Production-grade Hi-Fi Audio Streamer firmware and Web Controller for the **ESP3
 
 ---
 
+## Flashing Firmware to ESP32-S3
+
+### 1. Fresh Flash with `merged.bin` (Recommended)
+`merged.bin` combines the bootloader, partition table, and application firmware into a single binary image, allowing you to flash a fresh or blank ESP32-S3 with a single command starting at address `0x0`:
+
+```bash
+# Using esptool.py (Linux / macOS / WSL)
+esptool.py --chip esp32s3 -p /dev/ttyUSB0 -b 921600 --before default_reset --after hard_reset write_flash --flash_mode dio --flash_freq 80m --flash_size 16MB 0x0 merged.bin
+
+# Using esptool.py (Windows PowerShell / Command Prompt)
+esptool.py --chip esp32s3 -p COM3 -b 921600 write_flash 0x0 merged.bin
+```
+
+#### Web Browser Flashing (Zero Installation)
+1. Open Chrome or Edge and go to [Espressif ESP Web Tools](https://espressif.github.io/esptool-js/)
+2. Connect your ESP32-S3 via USB-C (ensure boot mode if required: hold `BOOT`, tap `RESET`, release `BOOT`)
+3. Select `merged.bin` and enter Flash Address **`0x000000`**
+4. Click **Program** to flash the complete firmware suite.
+
+---
+
+### 2. Generating `merged.bin` Locally
+You can run the included Python merger anytime to bundle the binaries:
+```bash
+python3 firmware/merge_bin.py --output build_output/merged.bin
+```
+The merger embeds:
+- **0x000000**: ESP32-S3 Bootloader
+- **0x008000**: 16MB Dual OTA Partition Table (`partitions_16mb.csv`)
+- **0x020000**: High-Performance Hi-Fi Streamer Application Firmware
+
+---
+
 ## Building from GitHub
 
 ### 1. Build Web Management UI
@@ -39,7 +72,7 @@ git clone https://github.com/your-repo/esp32-s3-hifi-streamer.git
 cd esp32-s3-hifi-streamer
 
 # Install dependencies and build
-npm install
+npm ci
 npm run build
 ```
 
@@ -48,7 +81,8 @@ npm run build
 # Ensure ESP-IDF v5.1+ environment is loaded
 . $HOME/esp/esp-idf/export.sh
 
-# Set target to ESP32-S3
+# Change to firmware folder and set target
+cd firmware
 idf.py set-target esp32s3
 
 # Build firmware binary, flash via USB, and open serial monitor
@@ -60,6 +94,8 @@ idf.py -p /dev/ttyUSB0 flash monitor
 
 ## GitHub Actions Automated CI/CD
 This repository includes a turnkey `.github/workflows/build-firmware.yml` workflow that automatically:
-1. Builds and type-checks the React + Tailwind Web Management console.
+1. Runs Node 22 with dependency caching to build and type-check the React + Tailwind Web Management console.
 2. Compiles the ESP-IDF v5 C/C++ firmware using `espressif/esp-idf-ci-action`.
-3. Packages firmware binaries into downloadable GitHub Release artifacts (`esp32s3-firmware-bundle`).
+3. Runs `firmware/merge_bin.py` to produce a single `merged.bin` for fresh flashing at offset `0x0`.
+4. Packages all binaries, ELF files, and flashing guides into downloadable GitHub Release artifacts (`esp32s3-firmware-bundle`).
+

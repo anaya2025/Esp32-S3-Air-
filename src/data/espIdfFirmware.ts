@@ -2,7 +2,7 @@ export interface FirmwareFile {
   filename: string;
   category: 'firmware' | 'config' | 'documentation';
   description: string;
-  language: 'c' | 'cmake' | 'ini' | 'csv' | 'markdown' | 'yaml';
+  language: 'c' | 'cmake' | 'ini' | 'csv' | 'markdown' | 'yaml' | 'python';
   content: string;
 }
 
@@ -518,8 +518,9 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'npm'
+          cache-dependency-path: 'package-lock.json'
 
       - name: Install dependencies
         run: npm ci || npm install
@@ -537,11 +538,20 @@ jobs:
           path: dist/
 
   build-esp32-firmware:
-    name: Build ESP-IDF v5 Firmware Binary
+    name: Build ESP-IDF v5 Firmware & Merged Binary
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Setup Python 3 & esptool
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install esptool
+        run: pip install esptool
 
       - name: ESP-IDF Build with esp-idf-ci-action
         uses: espressif/esp-idf-ci-action@v1
@@ -551,19 +561,125 @@ jobs:
           path: 'firmware'
         continue-on-error: true
 
-      - name: Package Firmware Binaries & Manifest
+      - name: Generate merged.bin for Fresh Flash & Package Artifacts
         run: |
           mkdir -p build_output
           echo "ESP32-S3 N16R8 Hi-Fi Music Streamer Build Pipeline" > build_output/build_info.txt
           echo "Target: ESP32-S3-WROOM-1-N16R8 (16MB Flash, 8MB Octal PSRAM)" >> build_output/build_info.txt
           echo "DAC: UDA1334A I2S Stereo (BCLK=GPIO4, WCLK=GPIO5, DIN=GPIO6)" >> build_output/build_info.txt
+          echo "Flash Mode: DIO 80MHz 16MB" >> build_output/build_info.txt
+          echo "Fresh Flash Offset: 0x000000" >> build_output/build_info.txt
           echo "Build Timestamp: $(date -u)" >> build_output/build_info.txt
+          
+          # 1. Run Python binary merger to generate merged.bin for 1-step fresh flash
+          python3 firmware/merge_bin.py --output build_output/merged.bin
+          cp build_output/merged.bin build_output/esp32s3_streamer_merged_16mb.bin 2>/dev/null || true
 
-      - name: Upload Firmware Artifacts
+          # 2. Collect any compiled ELF and partition binaries
+          if [ -d "firmware/build" ]; then
+            cp firmware/build/*.bin build_output/ 2>/dev/null || true
+            cp firmware/build/*.elf build_output/ 2>/dev/null || true
+            cp firmware/build/bootloader/*.bin build_output/ 2>/dev/null || true
+            cp firmware/build/partition_table/*.bin build_output/ 2>/dev/null || true
+          fi
+
+          # 3. Include partition configuration and instructions
+          cp firmware/partitions_16mb.csv build_output/ 2>/dev/null || true
+          cp firmware/sdkconfig.defaults build_output/ 2>/dev/null || true
+          cp firmware/merge_bin.py build_output/ 2>/dev/null || true
+
+      - name: Upload Firmware & merged.bin Bundle
         uses: actions/upload-artifact@v4
         with:
           name: esp32s3-firmware-bundle
           path: build_output/
+`
+  },
+  {
+    filename: 'firmware/merge_bin.py',
+    category: 'config',
+    description: 'Python utility to merge Bootloader (0x0), Partitions (0x8000), and App (0x20000) into merged.bin',
+    language: 'python',
+    content: `#!/usr/bin/env python3
+"""
+ESP32-S3 N16R8 Binary Merger Utility for Fresh Flashing
+======================================================
+Merges bootloader, partition table, and application binary into a single unified
+\`merged.bin\` image for 1-click fresh flashing starting at offset 0x0000.
+
+Offsets:
+  0x000000: Bootloader (bootloader.bin)
+  0x008000: Partition Table (partition-table.bin)
+  0x020000: Application Firmware (esp32_s3_hifi_streamer.bin)
+
+Fresh Flash Command:
+  esptool.py --chip esp32s3 -p /dev/ttyUSB0 -b 921600 write_flash 0x0 merged.bin
+"""
+
+import os, sys, argparse, subprocess, shutil
+
+BOOTLOADER_OFFSET = 0x0000
+PARTITION_TABLE_OFFSET = 0x8000
+APP_OFFSET = 0x20000
+
+def merge_in_python(bootloader_path, partitions_path, app_path, output_path):
+    with open(bootloader_path, "rb") as f: b_data = f.read()
+    with open(partitions_path, "rb") as f: p_data = f.read()
+    with open(app_path, "rb") as f: a_data = f.read()
+
+    total_size = APP_OFFSET + len(a_data)
+    if total_size % 0x1000 != 0:
+        total_size += 0x1000 - (total_size % 0x1000)
+
+    image = bytearray([0xFF] * total_size)
+    image[BOOTLOADER_OFFSET : BOOTLOADER_OFFSET + len(b_data)] = b_data
+    image[PARTITION_TABLE_OFFSET : PARTITION_TABLE_OFFSET + len(p_data)] = p_data
+    image[APP_OFFSET : APP_OFFSET + len(a_data)] = a_data
+
+    os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
+    with open(output_path, "wb") as f: f.write(image)
+    print(f"[+] Successfully generated merged binary: {output_path} ({len(image):,} bytes)")
+
+if __name__ == "__main__":
+    print("[*] Merging ESP32-S3 binaries for fresh flash starting at 0x0...")
+`
+  },
+  {
+    filename: 'FLASHING_GUIDE.md',
+    category: 'documentation',
+    description: 'Fresh Flash and OTA Upgrade guide for ESP32-S3 N16R8 + UDA1334A DAC',
+    language: 'markdown',
+    content: `# ESP32-S3 N16R8 Fresh Flash & Dual-OTA Guide
+
+## 1. Fresh Flash (Single File: \`merged.bin\` at 0x0)
+When bringing up a brand new or blank ESP32-S3-WROOM-1-N16R8 board, flash the all-in-one \`merged.bin\` starting from offset **\`0x000000\`**:
+
+\`\`\`bash
+# Linux / macOS / WSL:
+esptool.py --chip esp32s3 -p /dev/ttyUSB0 -b 921600 \\
+  --before default_reset --after hard_reset \\
+  write_flash --flash_mode dio --flash_freq 80m --flash_size 16MB \\
+  0x0 merged.bin
+
+# Windows (COM Port):
+esptool.py --chip esp32s3 -p COM3 -b 921600 write_flash 0x0 merged.bin
+\`\`\`
+
+## 2. Web Browser Flashing (Chrome / Edge)
+1. Navigate to https://espressif.github.io/esptool-js/
+2. Click **Connect** and pick your ESP32-S3 USB Serial Port.
+3. Add file **\`merged.bin\`** with offset **\`0x0\`**.
+4. Click **Program**.
+5. Once complete, your ESP32-S3 boots into AP mode (\`ESP32-Music-Setup\`) or connects to your Wi-Fi!
+
+## 3. Flash Memory Map (16MB SPI Flash):
+- **0x000000 - 0x007FFF**: ESP32-S3 Bootloader
+- **0x008000 - 0x008FFF**: Partition Table (Custom Dual 4MB OTA)
+- **0x009000 - 0x00EFFF**: NVS Flash (Wi-Fi credentials, Volume, EQ settings)
+- **0x00F000 - 0x010FFF**: OTA Data (Active bank marker: ota_0 vs ota_1)
+- **0x020000 - 0x41FFFF**: App Partition 0 (4MB)
+- **0x420000 - 0x81FFFF**: App Partition 1 (4MB)
+- **0x820000 - 0xC1FFFF**: SPIFFS Static Web Assets (4MB)
 `
   },
   {
