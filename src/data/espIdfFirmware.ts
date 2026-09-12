@@ -554,18 +554,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Build Firmware via PlatformIO
+      - name: Build ESP32-S3 Firmware via PlatformIO
         run: |
-          echo "[*] Compiling ESP32-S3 N16R8 firmware with PlatformIO..."
-          pio run -e esp32s3_n16r8_arduino || true
-
-      - name: ESP-IDF Build with esp-idf-ci-action
-        uses: espressif/esp-idf-ci-action@v1
-        with:
-          esp_idf_version: v5.1.2
-          target: esp32s3
-          path: 'firmware'
-        continue-on-error: true
+          echo "=========================================================="
+          echo " Compiling ESP32-S3 N16R8 Firmware via PlatformIO"
+          echo "=========================================================="
+          pio run -e esp32s3_n16r8_arduino
 
       - name: Generate merged.bin for Fresh Flash & Package Artifacts
         run: |
