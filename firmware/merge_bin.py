@@ -36,9 +36,9 @@ def main():
         "--chip", "esp32s3",
         "merge_bin",
         "-o", str(merged_out),
-        "--flash_mode", "qio",
+        "--flash_mode", "dio",
         "--flash_size", "16MB",
-        "--flash_freq", "80m",
+        "--flash_freq", "40m",
         "0x0000", str(bootloader),
         "0x8000", str(partitions),
         "0x10000", str(firmware)
