@@ -1,2 +1,4 @@
 # Python requirements for ESP32-S3 Firmware & Binary Merging
 esptool>=4.7.0
+platformio>=6.1.15
+

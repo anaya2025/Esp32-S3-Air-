@@ -136,16 +136,22 @@ def main():
     args = parser.parse_args()
 
     bootloader = args.bootloader or find_file([
+        ".pio/build/esp32s3_n16r8_arduino/bootloader.bin",
+        ".pio/build/esp32s3_n16r8_espidf/bootloader.bin",
         "firmware/build/bootloader/bootloader.bin",
         "build/bootloader/bootloader.bin",
         "build_output/bootloader.bin"
     ])
     partitions = args.partitions or find_file([
+        ".pio/build/esp32s3_n16r8_arduino/partitions.bin",
+        ".pio/build/esp32s3_n16r8_espidf/partition_table/partition-table.bin",
         "firmware/build/partition_table/partition-table.bin",
         "build/partition_table/partition-table.bin",
         "build_output/partition-table.bin"
     ])
     app = args.app or find_file([
+        ".pio/build/esp32s3_n16r8_arduino/firmware.bin",
+        ".pio/build/esp32s3_n16r8_espidf/esp32_s3_hifi_streamer.bin",
         "firmware/build/esp32_s3_hifi_streamer.bin",
         "build/esp32_s3_hifi_streamer.bin",
         "firmware/build/app.bin",

@@ -554,6 +554,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Build Firmware via PlatformIO
+        run: |
+          echo "[*] Compiling ESP32-S3 N16R8 firmware with PlatformIO..."
+          pio run -e esp32s3_n16r8_arduino || true
+
       - name: ESP-IDF Build with esp-idf-ci-action
         uses: espressif/esp-idf-ci-action@v1
         with:
@@ -576,7 +581,13 @@ jobs:
           python3 firmware/merge_bin.py --output build_output/merged.bin
           cp build_output/merged.bin build_output/esp32s3_streamer_merged_16mb.bin 2>/dev/null || true
 
-          # 2. Collect any compiled ELF and partition binaries
+          # 2. Collect PlatformIO compiled binaries if present
+          if [ -d ".pio/build/esp32s3_n16r8_arduino" ]; then
+            cp .pio/build/esp32s3_n16r8_arduino/*.bin build_output/ 2>/dev/null || true
+            cp .pio/build/esp32s3_n16r8_arduino/*.elf build_output/ 2>/dev/null || true
+          fi
+
+          # 3. Collect ESP-IDF compiled binaries if present
           if [ -d "firmware/build" ]; then
             cp firmware/build/*.bin build_output/ 2>/dev/null || true
             cp firmware/build/*.elf build_output/ 2>/dev/null || true
@@ -584,10 +595,11 @@ jobs:
             cp firmware/build/partition_table/*.bin build_output/ 2>/dev/null || true
           fi
 
-          # 3. Include partition configuration and instructions
+          # 4. Include partition configuration, merger utility, and instructions
           cp firmware/partitions_16mb.csv build_output/ 2>/dev/null || true
           cp firmware/sdkconfig.defaults build_output/ 2>/dev/null || true
           cp firmware/merge_bin.py build_output/ 2>/dev/null || true
+          cp FLASHING_GUIDE.md build_output/ 2>/dev/null || true
 
       - name: Upload Firmware & merged.bin Bundle
         uses: actions/upload-artifact@v4
