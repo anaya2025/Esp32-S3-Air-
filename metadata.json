@@ -1,0 +1,6 @@
+{
+  "name": "ESP32-S3 Hi-Fi Audio Streamer",
+  "description": "Production-grade ESP32-S3 N16R8 Wi-Fi music streamer with AirPlay 2, DLNA/uPnP, UDA1334A DAC I2S audio, 3-band DSP EQ, web radio, and robust dual-bank OTA updates.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
