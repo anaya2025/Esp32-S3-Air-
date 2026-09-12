@@ -38,7 +38,7 @@ def main():
         "-o", str(merged_out),
         "--flash_mode", "dio",
         "--flash_size", "16MB",
-        "--flash_freq", "40m",
+        "--flash_freq", "80m",
         "0x0000", str(bootloader),
         "0x8000", str(partitions),
         "0x10000", str(firmware)
