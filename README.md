@@ -76,7 +76,20 @@ npm ci
 npm run build
 ```
 
-### 2. Build ESP-IDF v5 Firmware
+### 2. Build via PlatformIO (VS Code or CLI)
+If you prefer VS Code with PlatformIO or the PlatformIO CLI:
+```bash
+# Build and upload Arduino framework environment
+pio run -e esp32s3_n16r8_arduino -t upload
+
+# Or build the native ESP-IDF environment
+pio run -e esp32s3_n16r8_espidf -t upload
+
+# Monitor serial console
+pio device monitor -b 115200
+```
+
+### 3. Build via Native ESP-IDF v5 (Espressif Official)
 ```bash
 # Ensure ESP-IDF v5.1+ environment is loaded
 . $HOME/esp/esp-idf/export.sh

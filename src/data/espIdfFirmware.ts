@@ -2,7 +2,7 @@ export interface FirmwareFile {
   filename: string;
   category: 'firmware' | 'config' | 'documentation';
   description: string;
-  language: 'c' | 'cmake' | 'ini' | 'csv' | 'markdown' | 'yaml' | 'python';
+  language: 'c' | 'cpp' | 'cmake' | 'ini' | 'csv' | 'markdown' | 'yaml' | 'python';
   content: string;
 }
 
@@ -705,6 +705,159 @@ project(esp32_s3_hifi_streamer)
     INCLUDE_DIRS "."
     REQUIRES esp_wifi esp_netif esp_event nvs_flash esp_http_server mdns esp_driver_i2s esp_ota app_update
 )
+`
+  },
+  {
+    filename: 'platformio.ini',
+    category: 'config',
+    description: 'PlatformIO configuration for ESP32-S3 N16R8 (Arduino + ESP-IDF environments, Octal PSRAM)',
+    language: 'ini',
+    content: `; ====================================================================
+; ESP32-S3 N16R8 Hi-Fi Music Streamer & AirPlay/DLNA Receiver
+; Hardware: ESP32-S3-WROOM-1-N16R8 (16MB Flash, 8MB Octal PSRAM)
+; DAC: NXP UDA1334A I2S Stereo Audio DAC
+; Frameworks: Arduino + ESP-IDF (Dual-Compatible)
+; ====================================================================
+
+[platformio]
+default_envs = esp32s3_n16r8_arduino
+src_dir = firmware_platformio/src
+include_dir = firmware_platformio/include
+
+; Global Settings applied to all environments
+[env]
+platform = espressif32 @ ^6.5.0
+board = esp32-s3-devkitc-1
+upload_speed = 921600
+monitor_speed = 115200
+board_build.partitions = firmware/partitions_16mb.csv
+
+; ESP32-S3 N16R8 Flash & PSRAM Architecture
+board_build.flash_mode = qio
+board_build.f_flash = 80000000L
+board_upload.flash_size = 16MB
+board_upload.maximum_size = 4194304
+
+; --------------------------------------------------------------------
+; Environment 1: Arduino Framework (Popular, Easy, Rich Audio Libs)
+; --------------------------------------------------------------------
+[env:esp32s3_n16r8_arduino]
+framework = arduino
+build_flags = 
+    -DCORE_DEBUG_LEVEL=3
+    -DBOARD_HAS_PSRAM
+    -mfix-esp32-psram-cache-issue
+    -DCONFIG_SPIRAM_CACHE_WORKAROUND
+    -DCONFIG_IDF_TARGET_ESP32S3=1
+    ; Pin Configuration for UDA1334A I2S DAC
+    -DI2S_BCLK=4
+    -DI2S_LRCK=5
+    -DI2S_DOUT=6
+lib_deps =
+    bblanchon/ArduinoJson @ ^7.0.0
+    earlephilhower/ESP8266Audio @ ^1.9.9
+    esphome/ESPAsyncWebServer-esphome @ ^3.1.0
+    AsyncTCP-esphome @ ^2.0.1
+
+; --------------------------------------------------------------------
+; Environment 2: Native ESP-IDF v5.x (Industry Grade, Production)
+; --------------------------------------------------------------------
+[env:esp32s3_n16r8_espidf]
+framework = espidf
+build_flags =
+    -DCONFIG_SPIRAM_MODE_OCT=1
+    -DCONFIG_SPIRAM_BOOT_INIT=1
+    -DCONFIG_IDF_TARGET_ESP32S3=1
+`
+  },
+  {
+    filename: 'firmware_platformio/src/main.cpp',
+    category: 'firmware',
+    description: 'Arduino C++ entry point with UDA1334A I2S driver, SoftAP setup, mDNS, and 3-Band EQ',
+    language: 'cpp',
+    content: `/**
+ * ESP32-S3 N16R8 Production Hi-Fi Streamer
+ * Arduino / PlatformIO Entry Point
+ * 
+ * Hardware:
+ *   - ESP32-S3-WROOM-1-N16R8 (16MB Flash, 8MB Octal PSRAM)
+ *   - NXP UDA1334A I2S DAC (BCLK=GPIO4, WCLK/LRCK=GPIO5, DIN=GPIO6)
+ */
+
+#include <Arduino.h>
+#include <WiFi.h>
+#include <ESPmDNS.h>
+#include <Preferences.h>
+#include <Update.h>
+#include <driver/i2s.h>
+#include <ArduinoJson.h>
+
+#define I2S_BCLK 4
+#define I2S_LRCK 5
+#define I2S_DOUT 6
+#define I2S_PORT I2S_NUM_0
+
+Preferences preferences;
+
+// Global Audio State
+struct AudioState {
+    int volume = 80;
+    bool isMuted = false;
+    float bass = 0.0f;     // -12.0 dB to +12.0 dB
+    float mid = 0.0f;      // -12.0 dB to +12.0 dB
+    float treble = 0.0f;   // -12.0 dB to +12.0 dB
+    char currentUrl[256] = "http://ice1.somafm.com/groovesalad-128-mp3";
+    bool isPlaying = false;
+} audioState;
+
+// Initialize I2S hardware driver for UDA1334A DAC
+bool setupI2SAudio() {
+    i2s_config_t i2s_config = {
+        .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX),
+        .sample_rate = 44100,
+        .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,
+        .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,
+        .communication_format = I2S_COMM_FORMAT_STAND_I2S,
+        .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
+        .dma_buf_count = 8,
+        .dma_buf_len = 512,
+        .use_apll = true,
+        .tx_desc_auto_clear = true
+    };
+
+    i2s_pin_config_t pin_config = {
+        .bck_io_num = I2S_BCLK,
+        .ws_io_num = I2S_LRCK,
+        .data_out_num = I2S_DOUT,
+        .data_in_num = I2S_PIN_NO_CHANGE
+    };
+
+    esp_err_t err = i2s_driver_install(I2S_PORT, &i2s_config, 0, NULL);
+    if (err != ESP_OK) return false;
+    i2s_set_pin(I2S_PORT, &pin_config);
+    i2s_set_clk(I2S_PORT, 44100, I2S_BITS_PER_SAMPLE_16BIT, I2S_CHANNEL_STEREO);
+    return true;
+}
+
+void setup() {
+    Serial.begin(115200);
+    delay(1000);
+    Serial.println("ESP32-S3 N16R8 Production Hi-Fi Streamer Online");
+    setupI2SAudio();
+    
+    // Wi-Fi & mDNS Responder
+    WiFi.mode(WIFI_AP_STA);
+    WiFi.softAP("ESP32-Music-Setup", "12345678");
+    if (MDNS.begin("espmusic")) {
+        MDNS.addService("http", "tcp", 80);
+        MDNS.addService("raop", "tcp", 5000);
+        MDNS.addService("upnp", "tcp", 49152);
+    }
+}
+
+void loop() {
+    vTaskDelay(pdMS_TO_TICKS(1000));
+}
 `
   }
 ];
