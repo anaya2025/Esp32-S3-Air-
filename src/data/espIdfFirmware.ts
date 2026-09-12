@@ -749,8 +749,8 @@ monitor_speed = 115200
 board_build.partitions = firmware/partitions_16mb.csv
 
 ; ESP32-S3 N16R8 Flash & PSRAM Architecture
-board_build.flash_mode = qio
-board_build.f_flash = 80000000L
+board_build.flash_mode = dio
+board_build.f_flash = 40000000L
 board_upload.flash_size = 16MB
 board_upload.maximum_size = 4194304
 
